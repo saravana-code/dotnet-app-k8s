@@ -1,0 +1,101 @@
+# base build
+
+FROM mcr.microsoft.com/dotnet/core/aspnet:3.1.3-alpine3.11 AS base
+
+##WORKDIR /app
+
+# ports
+
+EXPOSE 80
+
+EXPOSE 443
+
+# environment variable
+ENV ASPNETCORE_URLS = http://*:80
+
+
+# vars
+
+ARG app_name=ourdotnetapp
+
+ARG app_server_port=80
+
+ARG app_version=v1.0.0
+
+#
+
+ARG app_user_name=user1
+
+ARG app_user_uid=1000
+
+ARG app_user_gid=1000
+
+# add a user so that the container does not run as root
+
+RUN addgroup -g ${app_user_gid} -S ${app_user_name} && \
+
+    adduser -u ${app_user_uid} -G ${app_user_name} -S ${app_user_name} -D && \
+
+    chgrp -R 0 /home/${app_user_name} && \
+
+    chmod -R g+rwx /home/${app_user_name}
+
+
+
+# build
+
+FROM mcr.microsoft.com/dotnet/core/sdk:3.1.201-alpine3.11 AS build
+
+WORKDIR /src
+
+COPY ["OURWebApplication/OURWebApplication.csproj", "OURWebApplication/"]
+
+RUN dotnet clean "OURWebApplication/OURWebApplication.csproj"
+
+RUN dotnet restore "OURWebApplication/OURWebApplication.csproj"
+
+COPY . .
+
+WORKDIR "/src/OURWebApplication"
+
+# utilities
+
+RUN dotnet --info
+
+RUN dotnet --list-sdks
+
+RUN dotnet --list-runtimes
+
+RUN apk add --no-cache curl jq coreutils mlocate sed gawk
+
+RUN find -type d -name bin -prune -exec rm -rf {} \; && find -type d -name obj -prune -exec rm -rf {} \;
+
+# build in utilities
+
+RUN dotnet build "OURWebApplication.csproj" -c Release -o /app/build
+
+# publish
+
+FROM build AS publish
+
+RUN dotnet publish "OURWebApplication.csproj" -c Release -o /app/publish
+
+# final
+
+FROM base AS final
+
+##WORKDIR /app/publish
+
+WORKDIR /home/user1
+
+# change to user
+
+USER ${app_user_uid}:${app_user_gid}
+
+# put in home
+
+COPY --from=publish /app/publish .
+
+# run
+
+ENTRYPOINT ["dotnet", "OURWebApplication.dll"]
